@@ -1,8 +1,20 @@
+from datetime import datetime
+from http import HTTPStatus
 from typing import Optional
 
 from fastapi import FastAPI
-from sqlmodel import Field, SQLModel, create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlmodel import Field, Session, SQLModel, create_engine
+
+# ORM - Object Relational Mapping
+# placa
+# marca
+# modelo
+# cor
+# nome cliente
+# nome mecânico
+# data e hora chegada
+# data e hora finalização
+
 
 class Manutencao(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -42,12 +54,61 @@ def create_manutencao(manutencao: Manutencao):
         session.commit()
         session.refresh(manutencao)
         return manutencao
-    
-@app.patch("/manutencoes/{id}/finalizar")
-def finalizar_manutencao(id:int):
-    with Session(engine) as session:
-        statament = select(Manutencao).where(Manutencao.id == id)
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.patch("/manutencoes/{id}/finalizar")
+def finalizar_manutencao(id: int):
+    with Session(engine) as session:
+        # Monta a query = SELECT * FROM manutencao where id = id
+        statement = select(Manutencao).where(Manutencao.id == id)
+        manutencao = session.exec(statement=statement).first()
+        # validar se a manutenção ainda está em aberto
+        if manutencao.data_finalizacao:
+            return JSONResponse(
+                content={"message": "Manutenção já finalizada"},
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+
+        # atualizar a data_finalizacao com a data atual
+        manutencao.data_finalizacao = str(datetime.now())
+        # aplica a alteração no banco
+        session.commit()
+        # Atualiza o registro a partir
+        session.refresh(manutencao)
+        return manutencao
+
+
+# DELETE /manutencoes/id
+# Só pode deletar uma manutencao que ainda não tenha sido finalizada
+
+
+@app.delete("/manutencoes/{id}")
+def deletar_manutencao(id: int):
+    with Session(engine) as session:
+        # Monta a query = SELECT * FROM manutencao where id = id
+        statement = select(Manutencao).where(Manutencao.id == id)
+
+        # Executa a query e retorna o registro ou None se não existir
+        manutencao = session.exec(statement=statement).first()
+
+        print(manutencao)
+        # Valida se existe a manutenção
+        if not manutencao:
+            return JSONResponse(
+                content={"message": "Manutenção não existe"},
+                status_code=HTTPStatus.NOT_FOUND,
+            )
+
+        # Valida se a manutenção já foi finalizada
+        if manutencao.data_finalizacao:
+            return JSONResponse(
+                content={"message": "Manutenção já finalizada"},
+                status_code=HTTPStatus.BAD_REQUEST,
+            )
+
+        session.delete(manutencao)
+        session.commit()
+        return JSONResponse(
+            content=None,
+            status_code=HTTPStatus.NO_CONTENT,
+        )
